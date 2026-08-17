@@ -45,10 +45,11 @@ jobs:
           ditto -x -k GeoShift-source-fixed.zip build-source
           test -d build-source/GeoShiftParity
 
-      - name: Apply Swift build fixes
+      - name: Apply Swift and plist fixes
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import plistlib
 
           p = Path('build-source/GeoShiftParity/Features/Settings/DiagnosticsScreen.swift')
           s = p.read_text()
@@ -64,6 +65,13 @@ jobs:
           s = p.read_text()
           s = s.replace('''        case .gcj02:\n            let wgs = CoordinateConverter.gcj02ToWGS84(mapPoint)\n            self.wgs84 = wgs\n            self.gcj02 = mapPoint''', '''        case .gcj02:\n            let wgs = CoordinateConverter.gcj02ToWGS84(mapPoint)\n            self.init(wgs84: wgs)\n            self.gcj02 = mapPoint''')
           p.write_text(s)
+
+          p = Path('build-source/GeoShiftParity/Resources/Info.plist')
+          with p.open('rb') as f:
+              d = plistlib.load(f)
+          d['CFBundleExecutable'] = '$(EXECUTABLE_NAME)'
+          with p.open('wb') as f:
+              plistlib.dump(d, f, fmt=plistlib.FMT_XML, sort_keys=False)
           PY
 
       - name: Build unsigned IPA
@@ -72,6 +80,19 @@ jobs:
           chmod +x build.sh BUILD_ON_MAC.command Scripts/*.sh
           ./build.sh
           test -s dist/GeoShift-unsigned.ipa
+
+      - name: Validate IPA
+        run: |
+          python3 - <<'PY'
+          import zipfile, plistlib
+          p='build-source/GeoShiftParity/dist/GeoShift-unsigned.ipa'
+          with zipfile.ZipFile(p) as z:
+              info=plistlib.loads(z.read('Payload/GeoShift.app/Info.plist'))
+              exe=info.get('CFBundleExecutable')
+              assert exe == 'GeoShift', exe
+              assert f'Payload/GeoShift.app/{exe}' in z.namelist()
+              print('IPA validation OK:', exe)
+          PY
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
