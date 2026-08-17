@@ -32,8 +32,9 @@ jobs:
 
       - name: Reconstruct v4 source
         run: |
-          cat source-v4/part-01.txt source-v4/part-02.txt source-v4/part-03.txt source-v4/part-04.txt source-v4/part-05.txt source-v4/part-06b.txt source-v4/part-07.txt > GeoShift-v4.b64
+          cat source-v4/part-01.txt source-v4/part-02.txt source-v4/part-03.txt source-v4/part-04.txt source-v4/part-05.txt source-v4/part-06-0.txt source-v4/part-06-1.txt source-v4/part-06-2.txt source-v4/part-07.txt > GeoShift-v4.b64
           /usr/bin/base64 -D < GeoShift-v4.b64 > GeoShift-v4.zip
+          echo "a3c9fcf172d3c8c9cb02741ea652d68ae69d227bfbaee2456aecf0553293ae5c  GeoShift-v4.zip" | shasum -a 256 -c -
           unzip -t GeoShift-v4.zip
           rm -rf build-source
           mkdir build-source
