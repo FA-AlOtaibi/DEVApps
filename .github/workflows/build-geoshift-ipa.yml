@@ -32,7 +32,7 @@ jobs:
 
       - name: Reconstruct and extract source
         run: |
-          cat source-parts/part-01.txt source-parts/part-02.txt source-parts/part-03.txt source-parts/part-04.txt source-parts/part-05.txt source-parts/part-06a.txt source-parts/part-06b.txt | /usr/bin/base64 -D > GeoShift-source-fixed.zip
+          cat source-parts/part-01.txt source-parts/part-02.txt source-parts/part-03.txt source-parts/part-04.txt source-parts/part-05.txt source-parts/part-06a1.txt source-parts/part-06a2.txt source-parts/part-06b.txt | /usr/bin/base64 -D > GeoShift-source-fixed.zip
           unzip -t GeoShift-source-fixed.zip
           rm -rf build-source
           mkdir build-source
