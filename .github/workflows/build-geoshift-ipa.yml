@@ -50,7 +50,14 @@ jobs:
           gofmt -w main.go
 
       - name: Apply v6 Shadowrocket mode
-        run: python3 v6_shadowrocket.py build-source/GeoShiftParity
+        run: |
+          python3 v6_shadowrocket.py build-source/GeoShiftParity
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('build-source/GeoShiftParity/project.yml')
+          s=p.read_text().replace('MARKETING_VERSION: "3.0.0"','MARKETING_VERSION: "6.0.0"').replace('CURRENT_PROJECT_VERSION: "30"','CURRENT_PROJECT_VERSION: "60"')
+          p.write_text(s)
+          PY
 
       - name: Validate sources
         run: |
