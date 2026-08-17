@@ -12,7 +12,7 @@ on:
       - .github/workflows/build-geoshift-ipa.yml
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -82,12 +82,13 @@ jobs:
           chmod +x build.sh BUILD_ON_MAC.command Scripts/*.sh
           ./build.sh
           test -s dist/GeoShift-unsigned.ipa
+          cp dist/GeoShift-unsigned.ipa dist/GeoShift-v7.1-ProxyPreflight-Arabic-unsigned.ipa
 
       - name: Validate IPA
         run: |
           python3 - <<'PY'
           import zipfile, plistlib
-          p='build-source/GeoShiftParity/dist/GeoShift-unsigned.ipa'
+          p='build-source/GeoShiftParity/dist/GeoShift-v7.1-ProxyPreflight-Arabic-unsigned.ipa'
           with zipfile.ZipFile(p) as z:
               names=z.namelist()
               info=plistlib.loads(z.read('Payload/GeoShift.app/Info.plist'))
@@ -100,10 +101,20 @@ jobs:
               print('IPA validation OK:', info.get('CFBundleShortVersionString'), 'proxy preflight + background audio')
           PY
 
-      - name: Upload IPA
+      - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
           name: GeoShift-v7.1-ProxyPreflight-Arabic-unsigned-ipa
-          path: build-source/GeoShiftParity/dist/GeoShift-unsigned.ipa
+          path: build-source/GeoShiftParity/dist/GeoShift-v7.1-ProxyPreflight-Arabic-unsigned.ipa
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish v7.1 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete geoshift-v7.1 --yes --cleanup-tag || true
+          gh release create geoshift-v7.1 \
+            build-source/GeoShiftParity/dist/GeoShift-v7.1-ProxyPreflight-Arabic-unsigned.ipa \
+            --title "GeoShift v7.1 Proxy Preflight" \
+            --notes "Adds a local 127.0.0.1:8888 preflight before enabling the Wi-Fi proxy, keeps the local core alive when leaving the app for Settings, and prevents setup from presenting manual-proxy steps before the embedded proxy is confirmed reachable."
