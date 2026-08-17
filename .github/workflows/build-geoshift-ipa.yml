@@ -1,4 +1,4 @@
-name: Build GeoShift v5 Tunnel IPA
+name: Build GeoShift v6 Shadowrocket IPA
 
 on:
   workflow_dispatch:
@@ -8,8 +8,7 @@ on:
     paths:
       - source-v4/**
       - v4_hotfix.py
-      - v5_tunnel.py
-      - v5_fix.py
+      - v6_shadowrocket.py
       - .github/workflows/build-geoshift-ipa.yml
 
 permissions:
@@ -44,23 +43,21 @@ jobs:
           ditto -x -k GeoShift-v4.zip build-source
           test -d build-source/GeoShiftParity
 
-      - name: Apply v4.1 fixes
+      - name: Apply stable base fixes
         run: |
           python3 v4_hotfix.py build-source/GeoShiftParity
           cd build-source/GeoShiftParity/Core
           gofmt -w main.go
 
-      - name: Apply v5 tunnel architecture
-        run: |
-          python3 v5_tunnel.py build-source/GeoShiftParity
-          python3 v5_fix.py build-source/GeoShiftParity
+      - name: Apply v6 Shadowrocket mode
+        run: python3 v6_shadowrocket.py build-source/GeoShiftParity
 
       - name: Validate sources
         run: |
           cd build-source/GeoShiftParity/Core
           go test ./...
           cd ..
-          swiftc -parse App/*.swift Models/*.swift Services/*.swift Features/*/*.swift Utilities/*.swift Tests/*.swift TunnelExtension/*.swift
+          swiftc -parse App/*.swift Models/*.swift Services/*.swift Features/*/*.swift Utilities/*.swift Tests/*.swift
 
       - name: Build unsigned IPA
         run: |
@@ -69,7 +66,7 @@ jobs:
           ./build.sh
           test -s dist/GeoShift-unsigned.ipa
 
-      - name: Validate IPA and tunnel extension
+      - name: Validate IPA
         run: |
           python3 - <<'PY'
           import zipfile, plistlib
@@ -80,17 +77,15 @@ jobs:
               exe=info.get('CFBundleExecutable')
               assert exe == 'GeoShift', exe
               assert f'Payload/GeoShift.app/{exe}' in names
-              appex='Payload/GeoShift.app/PlugIns/GeoShiftTunnel.appex/GeoShiftTunnel'
-              assert appex in names, 'GeoShiftTunnel.appex not embedded'
-              ext_info=plistlib.loads(z.read('Payload/GeoShift.app/PlugIns/GeoShiftTunnel.appex/Info.plist'))
-              assert ext_info['NSExtension']['NSExtensionPointIdentifier']=='com.apple.networkextension.packet-tunnel'
-              print('IPA validation OK:', info.get('CFBundleShortVersionString'), 'tunnel embedded')
+              assert info.get('CFBundleShortVersionString') == '6.0.0', info.get('CFBundleShortVersionString')
+              assert not any('/PlugIns/GeoShiftTunnel.appex/' in n for n in names), 'v6 should not contain Network Extension'
+              print('IPA validation OK:', info.get('CFBundleShortVersionString'), 'no Network Extension')
           PY
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: GeoShift-v5-PacketTunnel-Arabic-unsigned-ipa
+          name: GeoShift-v6-Shadowrocket-WLOC-Arabic-unsigned-ipa
           path: build-source/GeoShiftParity/dist/GeoShift-unsigned.ipa
           if-no-files-found: error
           retention-days: 14
