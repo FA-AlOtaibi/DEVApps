@@ -18,10 +18,6 @@ new = '''func isLocalControlRequest(r *http.Request) bool {
 \tif host == "127.0.0.1" || host == "localhost" || host == "rendoor.cert" || host == "geoshift.local" {
 \t\treturn true
 \t}
-\t// When iOS is configured to use the iPhone's own Wi-Fi address as the
-\t// manual proxy, opening the proxy/status address itself must terminate
-\t// locally. Forwarding it would recursively dial :8888 through this server
-\t// until the process exhausts sockets/file descriptors.
 \tif requestTargetsProxyPort(r.Host) && isLocalInterfaceHost(host) {
 \t\treturn true
 \t}
@@ -33,7 +29,6 @@ func requestTargetsProxyPort(authority string) bool {
 \tif err == nil {
 \t\treturn port == "8888"
 \t}
-\t// A bare local host is also a local control request when reached directly.
 \treturn !strings.Contains(authority, ":")
 }
 
@@ -65,11 +60,48 @@ func isLocalInterfaceHost(host string) bool {
 }
 '''
 if old not in s:
-    raise SystemExit('main.go anchor not found')
+    raise SystemExit('main.go local control anchor not found')
+s = s.replace(old, new)
+
+# 2) HTTPS verification must not use Apple's gs-loc host. Apple-owned hosts may
+# enforce additional TLS policy/pinning, which makes the health check fail even
+# when the manual proxy and CA are configured correctly. Intercept a private
+# GeoShift-only authority entirely inside the embedded proxy instead.
+old = '''\tif r.Method == http.MethodConnect {
+\t\tif isWlocHost(r.Host) {
+\t\t\tp.mitmConnect(w, r)
+\t\t\treturn
+\t\t}
+\t\tp.tunnelConnect(w, r)
+\t\treturn
+\t}
+'''
+new = '''\tif r.Method == http.MethodConnect {
+\t\thost := strings.ToLower(hostOnly(r.Host))
+\t\tif isWlocHost(r.Host) || host == "geoshift.verify" {
+\t\t\tp.mitmConnect(w, r)
+\t\t\treturn
+\t\t}
+\t\tp.tunnelConnect(w, r)
+\t\treturn
+\t}
+'''
+if old not in s:
+    raise SystemExit('main.go CONNECT anchor not found')
 s = s.replace(old, new)
 p.write_text(s)
 
-# 2) Map: panning only changes visible search region; it must NOT move selected/spoofed coordinate.
+# 3) Local provider health check uses the private intercepted authority.
+p = root / 'Services/LocationProviders.swift'
+s = p.read_text()
+old = 'URL(string: "https://gs-loc.apple.com/geoshift-verify?nonce=\\(UUID().uuidString)")!'
+new = 'URL(string: "https://geoshift.verify/geoshift-verify?nonce=\\(UUID().uuidString)")!'
+if old not in s:
+    raise SystemExit('LocationProviders verify URL anchor not found')
+s = s.replace(old, new)
+p.write_text(s)
+
+# 4) Map: panning only changes visible search region; it must NOT move selected/spoofed coordinate.
 p = root / 'Features/Map/MapHomeView.swift'
 s = p.read_text()
 old = '''MapKitView(selection: $store.selection, mapSystem: store.mapSystem, onTap: { c in choose(c) }, onCenterChanged: { c, meters in visibleRegion = .init(center: c, latitudinalMeters: meters, longitudinalMeters: meters); store.selectMapPoint(GeoPoint(c)); reverseGeocode(c) }, cameraTarget: cameraTarget, cameraRevision: cameraRevision).ignoresSafeArea()'''
@@ -79,4 +111,4 @@ if old not in s:
 s = s.replace(old, new)
 s = s.replace('''Text("اضغط على الخريطة أو حرّكها أو ابحث عن مكان لاختيار الموقع.")''', '''Text("اضغط على نقطة في الخريطة أو ابحث عن مكان لاختيار الموقع. تحريك الخريطة وحده لا يغيّر الموقع المحدد.")''')
 p.write_text(s)
-print('GeoShift v4 hotfix applied: local proxy loop guard + stable map selection')
+print('GeoShift v4.2 hotfix applied: local-loop guard + private HTTPS verification + stable map selection')
