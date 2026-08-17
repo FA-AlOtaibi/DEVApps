@@ -8,6 +8,8 @@ on:
     paths:
       - source-parts/**
       - arabize.py
+      - parity3.py
+      - parity3_finalize.py
       - .github/workflows/build-geoshift-ipa.yml
 
 permissions:
@@ -46,26 +48,18 @@ jobs:
           ditto -x -k GeoShift-source-fixed.zip build-source
           test -d build-source/GeoShiftParity
 
-      - name: Apply Swift, plist and Arabic UI fixes
+      - name: Apply parity and Arabic UI patches
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import plistlib
-          p = Path('build-source/GeoShiftParity/Features/Settings/DiagnosticsScreen.swift')
-          s = p.read_text().replace('    static func make(store: AppStore) -> String {', '    @MainActor\n    static func make(store: AppStore) -> String {')
-          p.write_text(s)
-          p = Path('build-source/GeoShiftParity/Services/RealtimeLocationService.swift')
-          s = p.read_text().replace('final class RealtimeLocationService: NSObject, ObservableObject, CLLocationManagerDelegate {', 'final class RealtimeLocationService: NSObject, ObservableObject, @preconcurrency CLLocationManagerDelegate {')
-          p.write_text(s)
-          p = Path('build-source/GeoShiftParity/Models/GeoModels.swift')
-          s = p.read_text().replace('''        case .gcj02:\n            let wgs = CoordinateConverter.gcj02ToWGS84(mapPoint)\n            self.wgs84 = wgs\n            self.gcj02 = mapPoint''', '''        case .gcj02:\n            let wgs = CoordinateConverter.gcj02ToWGS84(mapPoint)\n            self.init(wgs84: wgs)\n            self.gcj02 = mapPoint''')
-          p.write_text(s)
-          p = Path('build-source/GeoShiftParity/Resources/Info.plist')
-          with p.open('rb') as f: d=plistlib.load(f)
-          d['CFBundleExecutable']='$(EXECUTABLE_NAME)'
-          with p.open('wb') as f: plistlib.dump(d,f,fmt=plistlib.FMT_XML,sort_keys=False)
-          PY
+          python3 parity3.py build-source/GeoShiftParity
+          python3 parity3_finalize.py build-source/GeoShiftParity
           python3 arabize.py build-source/GeoShiftParity
+
+      - name: Validate sources
+        run: |
+          cd build-source/GeoShiftParity/Core
+          go test ./...
+          cd ..
+          swiftc -parse App/*.swift Models/*.swift Services/*.swift Features/*/*.swift Utilities/*.swift Tests/*.swift
 
       - name: Build unsigned IPA
         run: |
@@ -84,13 +78,14 @@ jobs:
               exe=info.get('CFBundleExecutable')
               assert exe == 'GeoShift', exe
               assert f'Payload/GeoShift.app/{exe}' in z.namelist()
-              print('IPA validation OK:', exe)
+              assert info.get('CFBundleShortVersionString') == '3.0.0'
+              print('IPA validation OK:', exe, info.get('CFBundleShortVersionString'))
           PY
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: GeoShift-Arabic-unsigned-ipa
+          name: GeoShift-3.0-Arabic-parity-ipa
           path: build-source/GeoShiftParity/dist/GeoShift-unsigned.ipa
           if-no-files-found: error
           retention-days: 14
