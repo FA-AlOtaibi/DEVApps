@@ -1,4 +1,4 @@
-name: Build GeoShift IPA
+name: Build GeoShift Parity IPA
 
 on:
   workflow_dispatch:
@@ -6,14 +6,11 @@ on:
     branches:
       - master
     paths:
-      - source-parts/**
-      - arabize.py
-      - parity3.py
-      - parity3_finalize.py
+      - source-v4/**
       - .github/workflows/build-geoshift-ipa.yml
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -33,26 +30,15 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
-      - name: Reconstruct and extract source
+      - name: Reconstruct v4 source
         run: |
-          cat source-parts/part-01.txt source-parts/part-02.txt source-parts/part-03.txt source-parts/part-04.txt source-parts/part-05.txt > GeoShift-source.b64
-          cat source-parts/part-06a1.txt >> GeoShift-source.b64
-          head -c 661 source-parts/part-06a21.txt >> GeoShift-source.b64
-          cat source-parts/part-06a21-fix.txt >> GeoShift-source.b64
-          tail -c 8 source-parts/part-06a21.txt >> GeoShift-source.b64
-          cat source-parts/part-06a22.txt source-parts/part-06b.txt >> GeoShift-source.b64
-          /usr/bin/base64 -D < GeoShift-source.b64 > GeoShift-source-fixed.zip
-          unzip -t GeoShift-source-fixed.zip
+          cat source-v4/part-01.txt source-v4/part-02.txt source-v4/part-03.txt source-v4/part-04.txt source-v4/part-05.txt source-v4/part-06b.txt source-v4/part-07.txt > GeoShift-v4.b64
+          /usr/bin/base64 -D < GeoShift-v4.b64 > GeoShift-v4.zip
+          unzip -t GeoShift-v4.zip
           rm -rf build-source
           mkdir build-source
-          ditto -x -k GeoShift-source-fixed.zip build-source
+          ditto -x -k GeoShift-v4.zip build-source
           test -d build-source/GeoShiftParity
-
-      - name: Apply parity and Arabic UI patches
-        run: |
-          python3 parity3.py build-source/GeoShiftParity
-          python3 parity3_finalize.py build-source/GeoShiftParity
-          python3 arabize.py build-source/GeoShiftParity
 
       - name: Validate sources
         run: |
@@ -85,7 +71,7 @@ jobs:
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: GeoShift-3.0-Arabic-parity-ipa
+          name: GeoShift-v4-Parity-Arabic-unsigned-ipa
           path: build-source/GeoShiftParity/dist/GeoShift-unsigned.ipa
           if-no-files-found: error
           retention-days: 14
