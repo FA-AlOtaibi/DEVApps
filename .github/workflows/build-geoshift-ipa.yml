@@ -38,7 +38,7 @@ jobs:
           cat source-parts/part-06a21-fix.txt >> GeoShift-source.b64
           tail -c 8 source-parts/part-06a21.txt >> GeoShift-source.b64
           cat source-parts/part-06a22.txt source-parts/part-06b.txt >> GeoShift-source.b64
-          /usr/bin/base64 -D GeoShift-source.b64 > GeoShift-source-fixed.zip
+          /usr/bin/base64 -D < GeoShift-source.b64 > GeoShift-source-fixed.zip
           unzip -t GeoShift-source-fixed.zip
           rm -rf build-source
           mkdir build-source
