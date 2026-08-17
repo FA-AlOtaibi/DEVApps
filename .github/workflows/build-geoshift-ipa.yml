@@ -45,25 +45,22 @@ jobs:
           ditto -x -k GeoShift-source-fixed.zip build-source
           test -d build-source/GeoShiftParity
 
+      - name: Apply Swift concurrency fix
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('build-source/GeoShiftParity/Features/Settings/DiagnosticsScreen.swift')
+          s = p.read_text()
+          s = s.replace('    static func make(store: AppStore) -> String {', '    @MainActor\n    static func make(store: AppStore) -> String {')
+          p.write_text(s)
+          PY
+
       - name: Build unsigned IPA
         run: |
           cd build-source/GeoShiftParity
           chmod +x build.sh BUILD_ON_MAC.command Scripts/*.sh
           ./build.sh
           test -s dist/GeoShift-unsigned.ipa
-
-      - name: Publish readable source tree
-        run: |
-          rm -rf source
-          mkdir -p source
-          ditto build-source/GeoShiftParity source/GeoShiftParity
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add source
-          if ! git diff --cached --quiet; then
-            git commit -m "Publish GeoShift source tree"
-            git push
-          fi
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
