@@ -9,6 +9,7 @@ on:
       - source-v4/**
       - v4_hotfix.py
       - v5_tunnel.py
+      - v5_fix.py
       - .github/workflows/build-geoshift-ipa.yml
 
 permissions:
@@ -50,7 +51,9 @@ jobs:
           gofmt -w main.go
 
       - name: Apply v5 tunnel architecture
-        run: python3 v5_tunnel.py build-source/GeoShiftParity
+        run: |
+          python3 v5_tunnel.py build-source/GeoShiftParity
+          python3 v5_fix.py build-source/GeoShiftParity
 
       - name: Validate sources
         run: |
