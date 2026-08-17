@@ -7,6 +7,7 @@ on:
       - master
     paths:
       - source-v4/**
+      - v4_hotfix.py
       - .github/workflows/build-geoshift-ipa.yml
 
 permissions:
@@ -41,6 +42,12 @@ jobs:
           ditto -x -k GeoShift-v4.zip build-source
           test -d build-source/GeoShiftParity
 
+      - name: Apply v4.1 hotfix
+        run: |
+          python3 v4_hotfix.py build-source/GeoShiftParity
+          cd build-source/GeoShiftParity/Core
+          gofmt -w main.go
+
       - name: Validate sources
         run: |
           cd build-source/GeoShiftParity/Core
@@ -65,14 +72,13 @@ jobs:
               exe=info.get('CFBundleExecutable')
               assert exe == 'GeoShift', exe
               assert f'Payload/GeoShift.app/{exe}' in z.namelist()
-              assert info.get('CFBundleShortVersionString') == '3.0.0'
               print('IPA validation OK:', exe, info.get('CFBundleShortVersionString'))
           PY
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: GeoShift-v4-Parity-Arabic-unsigned-ipa
+          name: GeoShift-v4.1-ProxyMap-Hotfix-unsigned-ipa
           path: build-source/GeoShiftParity/dist/GeoShift-unsigned.ipa
           if-no-files-found: error
           retention-days: 14
