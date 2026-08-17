@@ -1,0 +1,49 @@
+name: Build GeoShift IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+    paths:
+      - GeoShift-source.zip
+      - .github/workflows/build-geoshift-ipa.yml
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Extract source
+        run: |
+          rm -rf build-source
+          mkdir build-source
+          ditto -x -k GeoShift-source.zip build-source
+          test -d build-source/GeoShiftParity
+
+      - name: Build unsigned IPA
+        run: |
+          cd build-source/GeoShiftParity
+          chmod +x build.sh BUILD_ON_MAC.command Scripts/*.sh
+          ./build.sh
+          test -s dist/GeoShift-unsigned.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: GeoShift-unsigned-ipa
+          path: build-source/GeoShiftParity/dist/GeoShift-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
