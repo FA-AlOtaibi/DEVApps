@@ -6,8 +6,11 @@ on:
     branches:
       - master
     paths:
-      - GeoShift-source.zip
+      - source-parts/**
       - .github/workflows/build-geoshift-ipa.yml
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -22,15 +25,18 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.23.x'
+          cache: false
 
       - name: Install XcodeGen
         run: brew install xcodegen
 
-      - name: Extract source
+      - name: Reconstruct and extract source
         run: |
+          cat source-parts/part-*.txt | /usr/bin/base64 -D > GeoShift-source-fixed.zip
+          unzip -t GeoShift-source-fixed.zip
           rm -rf build-source
           mkdir build-source
-          ditto -x -k GeoShift-source.zip build-source
+          ditto -x -k GeoShift-source-fixed.zip build-source
           test -d build-source/GeoShiftParity
 
       - name: Build unsigned IPA
@@ -39,6 +45,19 @@ jobs:
           chmod +x build.sh BUILD_ON_MAC.command Scripts/*.sh
           ./build.sh
           test -s dist/GeoShift-unsigned.ipa
+
+      - name: Publish readable source tree
+        run: |
+          rm -rf source
+          mkdir -p source
+          ditto build-source/GeoShiftParity source/GeoShiftParity
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add source
+          if ! git diff --cached --quiet; then
+            git commit -m "Publish GeoShift source tree"
+            git push
+          fi
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
