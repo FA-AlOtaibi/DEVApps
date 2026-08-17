@@ -1,4 +1,4 @@
-name: Build GeoShift v6 Shadowrocket IPA
+name: Build GeoShift v7 Original-Style IPA
 
 on:
   workflow_dispatch:
@@ -8,7 +8,6 @@ on:
     paths:
       - source-v4/**
       - v4_hotfix.py
-      - v6_shadowrocket.py
       - .github/workflows/build-geoshift-ipa.yml
 
 permissions:
@@ -46,18 +45,36 @@ jobs:
       - name: Apply stable base fixes
         run: |
           python3 v4_hotfix.py build-source/GeoShiftParity
-          cd build-source/GeoShiftParity/Core
-          gofmt -w main.go
 
-      - name: Apply v6 Shadowrocket mode
+      - name: Apply v7 original-style local App Mode
         run: |
-          python3 v6_shadowrocket.py build-source/GeoShiftParity
           python3 - <<'PY'
           from pathlib import Path
-          p=Path('build-source/GeoShiftParity/project.yml')
-          s=p.read_text().replace('MARKETING_VERSION: "3.0.0"','MARKETING_VERSION: "6.0.0"').replace('CURRENT_PROJECT_VERSION: "30"','CURRENT_PROJECT_VERSION: "60"')
+          root = Path('build-source/GeoShiftParity')
+
+          p = root / 'Core/bridge.go'
+          s = p.read_text().replace('Addr: ":8888"', 'Addr: "127.0.0.1:8888"')
+          p.write_text(s)
+
+          p = root / 'Features/Setup/SetupFlowView.swift'
+          s = p.read_text()
+          s = s.replace('الخادم هو عنوان IP الخاص بالآيفون على الشبكة، والمنفذ 8888.', 'الخادم هو 127.0.0.1 والمنفذ 8888. لا تستخدم عنوان IP الخاص بالـ Wi-Fi.')
+          p.write_text(s)
+
+          p = root / 'Services/LocationProviders.swift'
+          s = p.read_text().replace('تأكد من ضبط HTTP Proxy لشبكة Wi‑Fi على عنوان الآيفون والمنفذ 8888.', 'تأكد من ضبط HTTP Proxy للشبكة الحالية على 127.0.0.1 والمنفذ 8888.')
+          p.write_text(s)
+
+          p = root / 'Services/EmbeddedCoreManager.swift'
+          s = p.read_text().replace('تم تشغيل البروكسي المحلي على المنفذ 8888 باستخدام CA المحفوظة في Keychain', 'تم تشغيل البروكسي المحلي على 127.0.0.1:8888 باستخدام CA المحفوظة في Keychain')
+          p.write_text(s)
+
+          p = root / 'project.yml'
+          s = p.read_text().replace('MARKETING_VERSION: "3.0.0"','MARKETING_VERSION: "7.0.0"').replace('CURRENT_PROJECT_VERSION: "30"','CURRENT_PROJECT_VERSION: "70"')
           p.write_text(s)
           PY
+          cd build-source/GeoShiftParity/Core
+          gofmt -w main.go bridge.go
 
       - name: Validate sources
         run: |
@@ -84,15 +101,15 @@ jobs:
               exe=info.get('CFBundleExecutable')
               assert exe == 'GeoShift', exe
               assert f'Payload/GeoShift.app/{exe}' in names
-              assert info.get('CFBundleShortVersionString') == '6.0.0', info.get('CFBundleShortVersionString')
-              assert not any('/PlugIns/GeoShiftTunnel.appex/' in n for n in names), 'v6 should not contain Network Extension'
-              print('IPA validation OK:', info.get('CFBundleShortVersionString'), 'no Network Extension')
+              assert info.get('CFBundleShortVersionString') == '7.0.0', info.get('CFBundleShortVersionString')
+              assert not any('/PlugIns/GeoShiftTunnel.appex/' in n for n in names)
+              print('IPA validation OK:', info.get('CFBundleShortVersionString'), 'original-style App Mode')
           PY
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: GeoShift-v6-Shadowrocket-WLOC-Arabic-unsigned-ipa
+          name: GeoShift-v7-OriginalStyle-AppMode-Arabic-unsigned-ipa
           path: build-source/GeoShiftParity/dist/GeoShift-unsigned.ipa
           if-no-files-found: error
           retention-days: 14
