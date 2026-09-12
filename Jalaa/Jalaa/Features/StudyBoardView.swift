@@ -311,7 +311,8 @@ struct StudyBoardView: View {
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(width: 150, minHeight: 128)
+            .frame(width: 150)
+            .frame(minHeight: 128)
             .padding(14)
             .background(p.text.opacity(0.035), in: RoundedRectangle(cornerRadius: 22))
         }
