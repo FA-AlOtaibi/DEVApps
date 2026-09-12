@@ -26,7 +26,12 @@ struct StudyBoardView: View {
                         Text("التضخم الاقتصادي — ملخص مترابط").foregroundStyle(p.muted).fixedSize(horizontal:false,vertical:true)
                     }
                     Spacer()
-                    Button{recall.toggle()}{Image(systemName: recall ? "eye.slash.fill":"eye.fill").padding(12).background(.thinMaterial,in:Circle()).foregroundStyle(p.text)}
+                    Button(action: { recall.toggle() }) {
+                        Image(systemName: recall ? "eye.slash.fill" : "eye.fill")
+                            .padding(12)
+                            .background(.thinMaterial, in: Circle())
+                            .foregroundStyle(p.text)
+                    }
                 }
                 layoutPicker(p)
                 board(p)
@@ -160,6 +165,18 @@ struct NodeSheet: View {
     @Environment(\.dismiss) var dismiss
     var body:some View{
         let p=JalaaPalette.value(theme)
-        ZStack{p.background.ignoresSafeArea();VStack(alignment:.leading,spacing:20){Capsule().fill(p.text.opacity(0.25)).frame(width:44,height:5).frame(maxWidth:.infinity);Text(node.title).font(.largeTitle.black()).foregroundStyle(p.text).fixedSize(horizontal:false,vertical:true);Text(node.detail).font(.title3).foregroundStyle(p.muted).fixedSize(horizontal:false,vertical:true);Divider().overlay(p.text.opacity(0.1));ForEach([("اشرح","play.circle.fill"),("تعمّق","book.closed.fill"),("مثال","square.on.square"),("اسأل جلاء","sparkles")],id:\.0){i in HStack{Image(systemName:i.1).frame(width:30).foregroundStyle(p.accent);Text(i.0).font(.headline).foregroundStyle(p.text);Spacer();Image(systemName:"chevron.left").foregroundStyle(p.muted)}.padding(.vertical,8)};Spacer()}.padding(24)}
+        ZStack{
+            p.background.ignoresSafeArea()
+            VStack(alignment:.leading,spacing:20){
+                Capsule().fill(p.text.opacity(0.25)).frame(width:44,height:5).frame(maxWidth:.infinity)
+                Text(node.title).font(.system(size:34,weight:.black)).foregroundStyle(p.text).fixedSize(horizontal:false,vertical:true)
+                Text(node.detail).font(.title3).foregroundStyle(p.muted).fixedSize(horizontal:false,vertical:true)
+                Divider().overlay(p.text.opacity(0.1))
+                ForEach([("اشرح","play.circle.fill"),("تعمّق","book.closed.fill"),("مثال","square.on.square"),("اسأل جلاء","sparkles")],id:\.0){i in
+                    HStack{Image(systemName:i.1).frame(width:30).foregroundStyle(p.accent);Text(i.0).font(.headline).foregroundStyle(p.text);Spacer();Image(systemName:"chevron.left").foregroundStyle(p.muted)}.padding(.vertical,8)
+                }
+                Spacer()
+            }.padding(24)
+        }
     }
 }
