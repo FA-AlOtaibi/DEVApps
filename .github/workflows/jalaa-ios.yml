@@ -1,0 +1,44 @@
+name: Build Jalaa IPA
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'Jalaa/**'
+      - '.github/workflows/jalaa-ios.yml'
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        working-directory: Jalaa
+        run: xcodegen generate
+      - name: Build unsigned device app
+        working-directory: Jalaa
+        run: xcodebuild -project Jalaa.xcodeproj -scheme Jalaa -configuration Release -sdk iphoneos -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+      - name: Package IPA
+        working-directory: Jalaa
+        run: |
+          APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name '*.app' -print -quit)
+          test -n "$APP"
+          rm -rf Payload Jalaa-unsigned.ipa
+          mkdir Payload
+          cp -R "$APP" Payload/
+          zip -qry Jalaa-unsigned.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Jalaa-unsigned-ipa
+          path: Jalaa/Jalaa-unsigned.ipa
+      - name: Publish IPA
+        run: |
+          mkdir -p dist-releases
+          cp Jalaa/Jalaa-unsigned.ipa dist-releases/Jalaa-unsigned.ipa
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dist-releases/Jalaa-unsigned.ipa
+          git diff --cached --quiet || git commit -m "Build Jalaa unsigned IPA"
+          git push
