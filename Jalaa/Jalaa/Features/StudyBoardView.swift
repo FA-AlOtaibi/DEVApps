@@ -10,7 +10,13 @@ struct StudyBoardView: View {
     @State private var selected: BoardNodeData?
     @State private var layout = 0
     @State private var showQuiz = false
+
     @State private var mapOffsets: [UUID: CGSize] = [:]
+    @State private var nodeDragStarts: [UUID: CGSize] = [:]
+    @State private var mapScale: CGFloat = 0.82
+    @State private var mapPan: CGSize = .zero
+    @GestureState private var livePan: CGSize = .zero
+    @GestureState private var liveScale: CGFloat = 1
 
     @AppStorage("jalaaTheme") private var theme = 0
     @AppStorage("jalaaBoardSource") private var boardSource = ""
@@ -30,27 +36,31 @@ struct StudyBoardView: View {
         layout == 0 ? max(1, min(5, suggestedLayout)) : layout
     }
 
+    private var effectiveScale: CGFloat {
+        min(max(mapScale * liveScale, 0.50), 1.55)
+    }
+
     var body: some View {
         let p = JalaaPalette.value(theme)
 
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 14) {
                 if nodes.isEmpty {
                     emptyState(p)
                 } else {
-                    header(p)
+                    compactHeader(p)
                     compactControls(p)
                     board(p)
                 }
             }
-            .padding(.horizontal, 18)
-            .padding(.top, 12)
-            .padding(.bottom, 116)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 112)
         }
         .onAppear { loadMapOffsets() }
         .sheet(item: $selected) { node in
             NodeDetailView(node: node, source: boardSource, theme: theme)
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.fraction(0.72), .large])
                 .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showQuiz) {
@@ -60,15 +70,15 @@ struct StudyBoardView: View {
         }
     }
 
-    private func header(_ p: JalaaPalette) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+    private func compactHeader(_ p: JalaaPalette) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
             Text(boardTitle.isEmpty ? "لوحتي" : boardTitle)
-                .font(.system(size: 28, weight: .bold, design: .rounded))
+                .font(.system(size: 24, weight: .bold, design: .rounded))
                 .foregroundStyle(p.text)
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text("\(nodes.count) مفاهيم • اسحب لاستكشاف اللوحة واضغط للتفاصيل")
+            Text("\(nodes.count) مفاهيم")
                 .font(.caption)
                 .foregroundStyle(p.muted)
         }
@@ -120,7 +130,7 @@ struct StudyBoardView: View {
     @ViewBuilder
     private func board(_ p: JalaaPalette) -> some View {
         switch resolvedLayout {
-        case 1: draggableConceptMap(p)
+        case 1: conceptWorkspace(p)
         case 2: cardPager(p)
         case 3: timelinePager(p)
         case 4: comparison(p)
@@ -129,147 +139,279 @@ struct StudyBoardView: View {
         }
     }
 
-    // MARK: - Draggable concept canvas
+    // MARK: - Concept Workspace
 
-    private func draggableConceptMap(_ p: JalaaPalette) -> some View {
+    private func conceptWorkspace(_ p: JalaaPalette) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
+            HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("خريطة المفاهيم")
                         .font(.headline)
                         .foregroundStyle(p.text)
-                    Text("اسحب أي مفهوم لتعيد ترتيب الخريطة")
-                        .font(.caption)
+                    Text("حرّك اللوحة بإصبع • قرّب بإصبعين • اسحب العقدة لتعديل مكانها")
+                        .font(.caption2)
                         .foregroundStyle(p.muted)
                 }
+
                 Spacer()
-                Button("إعادة ترتيب") {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        mapOffsets = [:]
-                        saveMapOffsets()
-                    }
+
+                HStack(spacing: 4) {
+                    mapToolButton("minus", p: p) { setScale(mapScale - 0.12) }
+                    mapToolButton("viewfinder", p: p) { fitMap() }
+                    mapToolButton("plus", p: p) { setScale(mapScale + 0.12) }
                 }
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(p.accent)
             }
 
-            ScrollView([.horizontal, .vertical], showsIndicators: false) {
+            GeometryReader { geo in
+                let viewport = geo.size
+
                 ZStack {
-                    mapBackground(p)
-                    connectionLines(p)
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(p.text.opacity(0.018))
 
-                    ForEach(nodes.indices, id: \.self) { index in
-                        draggableMapNode(nodes[index], index: index, p: p)
+                    subtleMapBackground(p)
+
+                    ZStack {
+                        connectionLines(p)
+
+                        ForEach(nodes.indices, id: \.self) { index in
+                            conceptNode(nodes[index], index: index, p: p)
+                        }
                     }
+                    .frame(width: 980, height: 720)
+                    .scaleEffect(effectiveScale)
+                    .offset(
+                        x: centeredPanX(viewport: viewport) + mapPan.width + livePan.width,
+                        y: centeredPanY(viewport: viewport) + mapPan.height + livePan.height
+                    )
+                    .contentShape(Rectangle())
                 }
-                .frame(width: 720, height: 560)
+                .clipped()
                 .contentShape(Rectangle())
+                .gesture(canvasPanGesture())
+                .simultaneousGesture(canvasZoomGesture())
+                .onTapGesture(count: 2) { fitMap() }
             }
-            .frame(height: 510)
-            .background(p.text.opacity(0.02), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 26).stroke(p.text.opacity(0.06)))
+            .frame(height: 470)
+            .overlay(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(p.text.opacity(0.055), lineWidth: 1)
+            )
+
+            HStack(spacing: 6) {
+                Image(systemName: "hand.draw")
+                Text("اضغط على أي مفهوم لفتحه")
+                Spacer()
+                Button("إعادة ترتيب") { resetNodePositions() }
+                    .fontWeight(.semibold)
+                    .foregroundStyle(p.accent)
+            }
+            .font(.caption2)
+            .foregroundStyle(p.muted)
         }
     }
 
-    private func mapBackground(_ p: JalaaPalette) -> some View {
+    private func mapToolButton(_ icon: String, p: JalaaPalette, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(p.text)
+                .frame(width: 31, height: 31)
+                .background(p.text.opacity(0.05), in: Circle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func subtleMapBackground(_ p: JalaaPalette) -> some View {
         Canvas { context, size in
-            let step: CGFloat = 32
-            var path = Path()
-            var x: CGFloat = 0
-            while x <= size.width {
-                path.move(to: CGPoint(x: x, y: 0))
-                path.addLine(to: CGPoint(x: x, y: size.height))
+            let step: CGFloat = 34
+            var x: CGFloat = step
+            while x < size.width {
+                var y: CGFloat = step
+                while y < size.height {
+                    let rect = CGRect(x: x - 0.7, y: y - 0.7, width: 1.4, height: 1.4)
+                    context.fill(Path(ellipseIn: rect), with: .color(p.text.opacity(0.045)))
+                    y += step
+                }
                 x += step
             }
-            var y: CGFloat = 0
-            while y <= size.height {
-                path.move(to: CGPoint(x: 0, y: y))
-                path.addLine(to: CGPoint(x: size.width, y: y))
-                y += step
-            }
-            context.stroke(path, with: .color(p.text.opacity(0.025)), lineWidth: 0.6)
         }
+        .allowsHitTesting(false)
     }
 
     private func connectionLines(_ p: JalaaPalette) -> some View {
         Canvas { context, _ in
             guard !nodes.isEmpty else { return }
-            let centerPoint = positionForNode(0)
+            let root = positionForNode(0)
 
             for index in nodes.indices.dropFirst() {
-                let point = positionForNode(index)
-                var path = Path()
-                path.move(to: centerPoint)
-                path.addLine(to: point)
-                context.stroke(path, with: .color(p.accent.opacity(0.25)), lineWidth: 1.3)
-            }
+                let target = positionForNode(index)
+                let midX = (root.x + target.x) / 2
 
-            if nodes.count > 2 {
-                for index in 1..<(nodes.count - 1) {
-                    var path = Path()
-                    path.move(to: positionForNode(index))
-                    path.addLine(to: positionForNode(index + 1))
-                    context.stroke(path, with: .color(p.text.opacity(0.08)), style: StrokeStyle(lineWidth: 1, dash: [5, 5]))
-                }
+                var path = Path()
+                path.move(to: root)
+                path.addCurve(
+                    to: target,
+                    control1: CGPoint(x: midX, y: root.y),
+                    control2: CGPoint(x: midX, y: target.y)
+                )
+                context.stroke(
+                    path,
+                    with: .color(p.accent.opacity(index == 1 ? 0.38 : 0.24)),
+                    style: StrokeStyle(lineWidth: index == 1 ? 1.8 : 1.25, lineCap: .round)
+                )
             }
         }
+        .allowsHitTesting(false)
     }
 
-    private func draggableMapNode(_ node: BoardNodeData, index: Int, p: JalaaPalette) -> some View {
+    private func conceptNode(_ node: BoardNodeData, index: Int, p: JalaaPalette) -> some View {
         let base = defaultPosition(index: index)
-        let offset = mapOffsets[node.id] ?? .zero
-        let isCenter = index == 0
+        let stored = mapOffsets[node.id] ?? .zero
+        let isRoot = index == 0
 
-        return VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 6) {
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 7) {
                 Circle()
-                    .fill(isCenter ? p.accent : p.accent.opacity(0.65))
+                    .fill(isRoot ? p.accent : p.accent.opacity(0.70))
                     .frame(width: 7, height: 7)
-                Text(isCenter ? "الفكرة الرئيسية" : "مفهوم \(index + 1)")
+
+                Text(isRoot ? "الفكرة الرئيسية" : "مفهوم \(index + 1)")
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(isCenter ? p.accent : p.muted)
+                    .foregroundStyle(isRoot ? p.accent : p.muted)
+
                 Spacer(minLength: 0)
             }
 
             Text(recall ? "؟" : node.title)
-                .font(isCenter ? .subheadline.weight(.bold) : .caption.weight(.semibold))
+                .font(isRoot ? .body.weight(.bold) : .subheadline.weight(.semibold))
                 .foregroundStyle(p.text)
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(12)
-        .frame(width: isCenter ? 190 : 170, alignment: .leading)
-        .background(isCenter ? p.accent.opacity(0.12) : p.secondary.opacity(0.92), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(isCenter ? p.accent.opacity(0.38) : p.text.opacity(0.07)))
-        .shadow(color: .black.opacity(0.08), radius: 10, y: 5)
-        .position(x: base.x + offset.width, y: base.y + offset.height)
-        .highPriorityGesture(
-            DragGesture(minimumDistance: 3)
-                .onChanged { value in
-                    mapOffsets[node.id] = CGSize(width: offset.width + value.translation.width, height: offset.height + value.translation.height)
-                }
-                .onEnded { value in
-                    mapOffsets[node.id] = CGSize(width: offset.width + value.translation.width, height: offset.height + value.translation.height)
-                    saveMapOffsets()
-                }
+        .padding(.horizontal, 15)
+        .padding(.vertical, 13)
+        .frame(width: isRoot ? 260 : 220, alignment: .leading)
+        .background(
+            isRoot ? p.accent.opacity(0.13) : p.secondary.opacity(0.96),
+            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
         )
-        .onTapGesture {
-            selected = node
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(isRoot ? p.accent.opacity(0.48) : p.text.opacity(0.07), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(isRoot ? 0.10 : 0.055), radius: 12, y: 5)
+        .position(x: base.x + stored.width, y: base.y + stored.height)
+        .highPriorityGesture(nodeDragGesture(node))
+        .onTapGesture { selected = node }
+    }
+
+    private func nodeDragGesture(_ node: BoardNodeData) -> some Gesture {
+        DragGesture(minimumDistance: 8)
+            .onChanged { value in
+                if nodeDragStarts[node.id] == nil {
+                    nodeDragStarts[node.id] = mapOffsets[node.id] ?? .zero
+                }
+                let start = nodeDragStarts[node.id] ?? .zero
+                let scale = max(effectiveScale, 0.5)
+                mapOffsets[node.id] = CGSize(
+                    width: start.width + value.translation.width / scale,
+                    height: start.height + value.translation.height / scale
+                )
+            }
+            .onEnded { value in
+                let start = nodeDragStarts[node.id] ?? (mapOffsets[node.id] ?? .zero)
+                let scale = max(effectiveScale, 0.5)
+                mapOffsets[node.id] = CGSize(
+                    width: start.width + value.translation.width / scale,
+                    height: start.height + value.translation.height / scale
+                )
+                nodeDragStarts[node.id] = nil
+                saveMapOffsets()
+            }
+    }
+
+    private func canvasPanGesture() -> some Gesture {
+        DragGesture(minimumDistance: 10)
+            .updating($livePan) { value, state, _ in
+                state = value.translation
+            }
+            .onEnded { value in
+                mapPan.width += value.translation.width
+                mapPan.height += value.translation.height
+                clampPan()
+            }
+    }
+
+    private func canvasZoomGesture() -> some Gesture {
+        MagnificationGesture()
+            .updating($liveScale) { value, state, _ in
+                state = value
+            }
+            .onEnded { value in
+                setScale(mapScale * value)
+            }
+    }
+
+    private func setScale(_ value: CGFloat) {
+        withAnimation(.easeOut(duration: 0.16)) {
+            mapScale = min(max(value, 0.50), 1.55)
+            clampPan()
         }
     }
 
+    private func fitMap() {
+        withAnimation(.easeInOut(duration: 0.22)) {
+            mapScale = 0.72
+            mapPan = .zero
+        }
+    }
+
+    private func resetNodePositions() {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            mapOffsets = [:]
+            nodeDragStarts = [:]
+            saveMapOffsets()
+            fitMap()
+        }
+    }
+
+    private func clampPan() {
+        let limit: CGFloat = 360
+        mapPan.width = min(max(mapPan.width, -limit), limit)
+        mapPan.height = min(max(mapPan.height, -limit), limit)
+    }
+
+    private func centeredPanX(viewport: CGSize) -> CGFloat {
+        (viewport.width - 980 * effectiveScale) / 2
+    }
+
+    private func centeredPanY(viewport: CGSize) -> CGFloat {
+        (viewport.height - 720 * effectiveScale) / 2
+    }
+
     private func defaultPosition(index: Int) -> CGPoint {
-        let center = CGPoint(x: 360, y: 280)
-        if index == 0 { return center }
+        let root = CGPoint(x: 490, y: 360)
+        if index == 0 { return root }
+
+        let positions: [CGPoint] = [
+            CGPoint(x: 490, y: 125),
+            CGPoint(x: 770, y: 220),
+            CGPoint(x: 775, y: 505),
+            CGPoint(x: 490, y: 610),
+            CGPoint(x: 205, y: 505),
+            CGPoint(x: 205, y: 220)
+        ]
+
+        if index - 1 < positions.count {
+            return positions[index - 1]
+        }
 
         let satellites = max(nodes.count - 1, 1)
         let angle = Double(index - 1) / Double(satellites) * Double.pi * 2 - Double.pi / 2
-        let rx = 250.0
-        let ry = 185.0
-
         return CGPoint(
-            x: center.x + CGFloat(cos(angle) * rx),
-            y: center.y + CGFloat(sin(angle) * ry)
+            x: root.x + CGFloat(cos(angle) * 310),
+            y: root.y + CGFloat(sin(angle) * 245)
         )
     }
 
@@ -293,6 +435,7 @@ struct StudyBoardView: View {
     private func loadMapOffsets() {
         guard let data = mapOffsetsJSON.data(using: .utf8),
               let payload = try? JSONDecoder().decode([String: MapNodeOffset].self, from: data) else { return }
+
         var restored: [UUID: CGSize] = [:]
         for (key, value) in payload {
             if let id = UUID(uuidString: key) {
@@ -414,6 +557,7 @@ struct StudyBoardView: View {
                         .font(.headline)
                         .foregroundStyle(p.text)
                         .fixedSize(horizontal: false, vertical: true)
+
                     if !recall {
                         Text(node.detail)
                             .font(.subheadline)
@@ -434,7 +578,7 @@ struct StudyBoardView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
                 ForEach(nodes.indices, id: \.self) { i in
-                    VStack(spacing: 8) {
+                    HStack(spacing: 8) {
                         flowItem(index: i, node: nodes[i], p: p)
                         if i < nodes.count - 1 {
                             Image(systemName: "arrow.left")
@@ -495,20 +639,12 @@ struct StudyBoardView: View {
     }
 }
 
-// MARK: - Clear concept detail
+// MARK: - Concept Detail
 
 private enum DetailMode: String, CaseIterable {
-    case explain = "اشرح"
+    case explain = "شرح"
     case deepen = "تعمّق"
     case example = "مثال"
-
-    var icon: String {
-        switch self {
-        case .explain: return "text.bubble"
-        case .deepen: return "book.closed"
-        case .example: return "lightbulb"
-        }
-    }
 
     var actionKey: String {
         switch self {
@@ -538,14 +674,15 @@ struct NodeDetailView: View {
             p.background.ignoresSafeArea()
 
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 18) {
                     conceptHeader(p)
                     modePicker(p)
                     answerPanel(p)
+                    Divider().overlay(p.text.opacity(0.08))
                     askSection(p)
                 }
                 .padding(.horizontal, 20)
-                .padding(.top, 18)
+                .padding(.top, 20)
                 .padding(.bottom, 36)
             }
         }
@@ -553,13 +690,13 @@ struct NodeDetailView: View {
     }
 
     private func conceptHeader(_ p: JalaaPalette) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 9) {
             Text("المفهوم")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(p.accent)
 
             Text(node.title)
-                .font(.system(size: 25, weight: .bold, design: .rounded))
+                .font(.system(size: 24, weight: .bold, design: .rounded))
                 .foregroundStyle(p.text)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -569,28 +706,28 @@ struct NodeDetailView: View {
                 .lineSpacing(5)
                 .fixedSize(horizontal: false, vertical: true)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func modePicker(_ p: JalaaPalette) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 4) {
             ForEach(DetailMode.allCases, id: \.self) { item in
                 Button {
                     mode = item
                     Task { await run(item) }
                 } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: item.icon)
-                        Text(item.rawValue)
-                    }
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(mode == item ? p.background : p.text)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .background(mode == item ? p.accent : p.text.opacity(0.045), in: Capsule())
+                    Text(item.rawValue)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(mode == item ? p.background : p.muted)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 9)
+                        .background(mode == item ? p.accent : Color.clear, in: Capsule())
                 }
                 .buttonStyle(.plain)
             }
         }
+        .padding(4)
+        .background(p.text.opacity(0.045), in: Capsule())
     }
 
     @ViewBuilder
@@ -598,62 +735,53 @@ struct NodeDetailView: View {
         if loading {
             HStack(spacing: 10) {
                 ProgressView().tint(p.accent)
-                Text("جلاء يجهز الإجابة…")
+                Text("جلاء يرتب الفكرة…")
                     .font(.subheadline)
                     .foregroundStyle(p.muted)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-            .background(p.text.opacity(0.03), in: RoundedRectangle(cornerRadius: 18))
+            .padding(.vertical, 12)
         } else if !result.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(mode.rawValue)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(p.accent)
-                Text(result)
-                    .font(.body)
-                    .foregroundStyle(p.text)
-                    .lineSpacing(6)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(p.text.opacity(0.03), in: RoundedRectangle(cornerRadius: 18))
+            Text(result)
+                .font(.body)
+                .foregroundStyle(p.text)
+                .lineSpacing(6)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
 
         if !errorText.isEmpty {
             Text(errorText)
-                .font(.caption)
+                .font(.caption2)
                 .foregroundStyle(p.muted)
         }
     }
 
     private func askSection(_ p: JalaaPalette) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("اسأل عن هذا المفهوم")
-                .font(.headline)
+        VStack(alignment: .leading, spacing: 9) {
+            Text("اسأل عن الفكرة")
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(p.text)
 
             HStack(alignment: .bottom, spacing: 8) {
                 TextField("مثلاً: لماذا يحدث هذا؟", text: $question, axis: .vertical)
                     .lineLimit(1...4)
                     .foregroundStyle(p.text)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 12)
-                    .background(p.text.opacity(0.045), in: RoundedRectangle(cornerRadius: 16))
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 11)
+                    .background(p.text.opacity(0.045), in: RoundedRectangle(cornerRadius: 15))
 
                 Button { Task { await ask() } } label: {
                     Image(systemName: "arrow.up")
-                        .font(.system(size: 16, weight: .bold))
+                        .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(p.background)
-                        .frame(width: 44, height: 44)
+                        .frame(width: 42, height: 42)
                         .background(p.accent, in: Circle())
                 }
                 .buttonStyle(.plain)
                 .disabled(question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || loading)
             }
         }
-        .padding(.top, 4)
     }
 
     private func run(_ item: DetailMode) async {
@@ -678,7 +806,7 @@ struct NodeDetailView: View {
             }
             await MainActor.run {
                 result = fallback
-                errorText = "تعذر الاتصال بالذكاء الآن، لذلك عرضت نتيجة محلية."
+                errorText = "تعذر الاتصال بالذكاء الآن؛ عرضت نتيجة محلية."
                 loading = false
             }
         }
@@ -703,7 +831,7 @@ struct NodeDetailView: View {
         } catch {
             await MainActor.run {
                 result = BoardEngine.answer(question: q, node: node, source: source)
-                errorText = "تعذر الاتصال بالذكاء الآن، لذلك أجبت من المحتوى المحلي."
+                errorText = "تعذر الاتصال بالذكاء الآن؛ أجبت من المحتوى المحلي."
                 loading = false
             }
         }
